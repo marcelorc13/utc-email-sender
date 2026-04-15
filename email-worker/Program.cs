@@ -187,14 +187,6 @@ static async Task<string> GerarHtmlAsync(NpgsqlConnection conn)
                 $"<b>Umidade:</b> {reader["umidade"]}%" +
                 $"</p>"
             );
-
-            var img = reader["link_imagem"] as string;
-            if (!string.IsNullOrWhiteSpace(img))
-                sb.AppendLine($"<p><a href=\"{img}\">Ver imagem da região</a></p>");
-
-            var vid = reader["link_video"] as string;
-            if (!string.IsNullOrWhiteSpace(vid))
-                sb.AppendLine($"<p><a href=\"{vid}\">Ver vídeo da região</a></p>");
         }
     }
 
