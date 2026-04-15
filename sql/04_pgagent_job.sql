@@ -1,3 +1,6 @@
+-- Cria o pgagent
+CREATE EXTENSION IF NOT EXISTS pgagent;
+
 -- Criar o job
 INSERT INTO pgagent.pga_job (jobjclid, jobname, jobdesc, jobenabled)
 VALUES (
@@ -8,14 +11,15 @@ VALUES (
 );
 
 --  emite NOTIFY
-INSERT INTO pgagent.pga_jobstep (jstjobid, jstname, jstenabled, jstkind, jstcode, jstonerror)
+INSERT INTO pgagent.pga_jobstep (jstjobid, jstname, jstenabled, jstkind, jstdbname, jstcode, jstonerror)
 VALUES (
     currval('pgagent.pga_job_jobid_seq'),
     'step_notify_email',
     TRUE,
-    's',  -- SQL step
+    's',
+    'projeto_utc',
     'SELECT pg_notify(''novo_relatorio'', NOW()::TEXT);',
-    'f'   -- falha em caso de erro
+    'f'
 );
 
 -- schedule: diariamente às 06:00

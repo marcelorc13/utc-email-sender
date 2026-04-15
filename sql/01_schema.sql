@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS utc_zona (
     id            SERIAL PRIMARY KEY,
-    nome          TEXT NOT NULL,        -- ex: 'Central Western Standard Time'
-    utc_offset    TEXT NOT NULL UNIQUE, -- ex: 'UTC+08:45'
+    nome          TEXT NOT NULL,
+    utc_offset    TEXT NOT NULL UNIQUE,
     pais          TEXT NOT NULL,
     cidade        TEXT NOT NULL,
     descricao     TEXT,

@@ -30,10 +30,8 @@ migrate_db() {
     echo "Applying functions..."
     psql "${conn}" -v ON_ERROR_STOP=1 -f "${sql_dir}/03_functions.sql"
 
-    if [[ "${APPLY_PGAGENT_JOB:-0}" == "1" ]]; then
-        echo "Applying pgAgent job..."
-        psql "${conn}" -v ON_ERROR_STOP=1 -f "${sql_dir}/04_pgagent_job.sql"
-    fi
+	echo "Applying pgAgent job..."
+	psql "${conn}" -v ON_ERROR_STOP=1 -f "${sql_dir}/04_pgagent_job.sql"
 
     echo "Database migration finished."
 }
