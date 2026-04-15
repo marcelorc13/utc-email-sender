@@ -17,6 +17,8 @@ var smtpPass = Environment.GetEnvironmentVariable("SMTP_PASSWORD")
 var destinatarios = (Environment.GetEnvironmentVariable("EMAIL_DESTINATARIOS")
                     ?? throw new InvalidOperationException("EMAIL_DESTINATARIOS não definida."))
                     .Split(',');
+var weatherApiKey = Environment.GetEnvironmentVariable("WHEATHER_API_KEY")
+                    ?? throw new InvalidOperationException("WHEATHER_API_KEY não definida.");
 
 await using var conn = new NpgsqlConnection(connStr);
 await conn.OpenAsync();
@@ -24,11 +26,18 @@ await conn.OpenAsync();
 await using (var cmd = new NpgsqlCommand("LISTEN novo_relatorio;", conn))
     await cmd.ExecuteNonQueryAsync();
 
-Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Worker ouvindo PostgreSQL... aguardando notificações.");
+// Debounce: evita enviar múltiplos emails quando os 15 INSERTs disparam 15 NOTIFYs de uma vez
+var lastEmailSent = DateTime.MinValue;
 
-// Espera por uma notificação no postgres
 conn.Notification += (_, _) =>
 {
+    if ((DateTime.Now - lastEmailSent).TotalSeconds < 30)
+    {
+        Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] NOTIFY duplicado ignorado (debounce).");
+        return;
+    }
+    lastEmailSent = DateTime.Now;
+
     Task.Run(async () =>
     {
         try
@@ -47,8 +56,105 @@ conn.Notification += (_, _) =>
     });
 };
 
+Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Buscando previsão do tempo via WeatherAPI...");
+await FetchWeatherAsync(connStr, weatherApiKey);
+Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Worker ouvindo PostgreSQL... aguardando notificações.");
+
 while (true)
     await conn.WaitAsync();
+
+// Busca previsão na WeatherAPI e popula previsao_tempo para o dia de hoje
+static async Task FetchWeatherAsync(string connStr, string apiKey)
+{
+    using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+
+    await using var conn = new NpgsqlConnection(connStr);
+    await conn.OpenAsync();
+
+    var zones = new List<(int Id, string Cidade, string Query)>();
+    await using (var cmd = new NpgsqlCommand(
+        "SELECT id, cidade, weather_query FROM utc_zona ORDER BY id", conn))
+    await using (var reader = await cmd.ExecuteReaderAsync())
+        while (await reader.ReadAsync())
+            zones.Add((reader.GetInt32(0), reader.GetString(1), reader.GetString(2)));
+
+    var periodos = new Dictionary<string, int[]>
+    {
+        ["manhã"]  = [7, 8, 9, 10, 11],
+        ["tarde"]  = [12, 13, 14, 15, 16, 17],
+        ["noite"]  = [18, 19, 20, 21, 22, 23]
+    };
+
+    foreach (var (zoneId, cidade, weatherQuery) in zones)
+    {
+        try
+        {
+            Console.WriteLine($"  → {cidade} ({weatherQuery})...");
+            var url = $"https://api.weatherapi.com/v1/forecast.json"
+                    + $"?key={apiKey}&q={weatherQuery}&days=1&aqi=no&alerts=no";
+            var json = await http.GetStringAsync(url);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var hours = doc.RootElement
+                           .GetProperty("forecast")
+                           .GetProperty("forecastday")[0]
+                           .GetProperty("hour");
+
+            // Remove registros de hoje antes de inserir (idempotente em reinicializações)
+            await using (var del = new NpgsqlCommand(
+                "DELETE FROM previsao_tempo WHERE utc_id = @id AND data_hora::DATE = CURRENT_DATE",
+                conn))
+            {
+                del.Parameters.AddWithValue("id", zoneId);
+                await del.ExecuteNonQueryAsync();
+            }
+
+            foreach (var (periodo, range) in periodos)
+            {
+                double sumTemp = 0, sumHumid = 0;
+                var condCounts = new Dictionary<string, int>();
+                int count = 0;
+
+                for (int i = 0; i < hours.GetArrayLength(); i++)
+                {
+                    var hour = hours[i];
+                    var timeStr = hour.GetProperty("time").GetString()!;
+                    var hourIdx = int.Parse(timeStr.Split(' ')[1].Split(':')[0]);
+                    if (!range.Contains(hourIdx)) continue;
+
+                    sumTemp  += hour.GetProperty("temp_c").GetDouble();
+                    sumHumid += hour.GetProperty("humidity").GetDouble();
+                    var cond  = hour.GetProperty("condition").GetProperty("text").GetString()!;
+                    condCounts[cond] = condCounts.GetValueOrDefault(cond) + 1;
+                    count++;
+                }
+
+                if (count == 0) continue;
+
+                await using var ins = new NpgsqlCommand(@"
+                    INSERT INTO previsao_tempo
+                        (utc_id, data_hora, periodo, temperatura, condicao, umidade, descricao)
+                    VALUES (@utcId, NOW(), @periodo, @temp, @cond, @humid, @desc)", conn);
+
+                ins.Parameters.AddWithValue("utcId",   zoneId);
+                ins.Parameters.AddWithValue("periodo",  periodo);
+                ins.Parameters.AddWithValue("temp",     Math.Round(sumTemp / count, 1));
+                ins.Parameters.AddWithValue("cond",     condCounts.MaxBy(kv => kv.Value).Key);
+                ins.Parameters.AddWithValue("humid",    (int)Math.Round(sumHumid / count));
+                ins.Parameters.AddWithValue("desc",
+                    $"Dados via WeatherAPI — média de {count} horas ({periodo})");
+
+                await ins.ExecuteNonQueryAsync();
+                // trg_log_previsao e trg_notify_relatorio disparam automaticamente aqui
+            }
+
+            Console.WriteLine($"    OK: {cidade} — 3 períodos inseridos.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"    ERRO na zona {cidade}: {ex.Message}");
+        }
+    }
+}
 
 // Geração de HTML
 static async Task<string> GerarHtmlAsync(NpgsqlConnection conn)
