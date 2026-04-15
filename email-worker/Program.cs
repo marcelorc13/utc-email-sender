@@ -1,23 +1,3 @@
-// =============================================================
-//
-// Program.cs — Worker C# do Projeto 1UP
-//
-// Responsabilidades:
-//   1. Ler configuração via variáveis de ambiente
-//   2. Escutar o canal 'novo_relatorio' via PostgreSQL LISTEN
-//   3. Ao receber NOTIFY: consultar fn_dados_relatorio() e fn_log_hoje()
-//   4. Montar o HTML do relatório (domínio da aplicação)
-//   5. Enviar o email via SMTP
-//
-// Variáveis de ambiente necessárias (ver .env.example):
-//   DB_CONNECTION_STRING, SMTP_HOST, SMTP_PORT,
-//   SMTP_USER, SMTP_PASSWORD, EMAIL_DESTINATARIOS
-//
-// Dependências NuGet:
-//   dotnet add package Npgsql
-//   dotnet add package MailKit
-// =============================================================
-
 using DotNetEnv;
 using Npgsql;
 using MimeKit;
@@ -25,14 +5,14 @@ using MailKit.Net.Smtp;
 
 Env.TraversePath().Load();
 
-var connStr       = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
+var connStr = Environment.GetEnvironmentVariable("DB_CONNECTION_STRING")
                     ?? throw new InvalidOperationException("DB_CONNECTION_STRING não definida.");
-var smtpHost      = Environment.GetEnvironmentVariable("SMTP_HOST")
+var smtpHost = Environment.GetEnvironmentVariable("SMTP_HOST")
                     ?? throw new InvalidOperationException("SMTP_HOST não definida.");
-var smtpPort      = int.Parse(Environment.GetEnvironmentVariable("SMTP_PORT") ?? "587");
-var smtpUser      = Environment.GetEnvironmentVariable("SMTP_USER")
+var smtpPort = int.Parse(Environment.GetEnvironmentVariable("SMTP_PORT") ?? "587");
+var smtpUser = Environment.GetEnvironmentVariable("SMTP_USER")
                     ?? throw new InvalidOperationException("SMTP_USER não definida.");
-var smtpPass      = Environment.GetEnvironmentVariable("SMTP_PASSWORD")
+var smtpPass = Environment.GetEnvironmentVariable("SMTP_PASSWORD")
                     ?? throw new InvalidOperationException("SMTP_PASSWORD não definida.");
 var destinatarios = (Environment.GetEnvironmentVariable("EMAIL_DESTINATARIOS")
                     ?? throw new InvalidOperationException("EMAIL_DESTINATARIOS não definida."))
@@ -46,6 +26,7 @@ await using (var cmd = new NpgsqlCommand("LISTEN novo_relatorio;", conn))
 
 Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] Worker ouvindo PostgreSQL... aguardando notificações.");
 
+// Espera por uma notificação no postgres
 conn.Notification += (_, _) =>
 {
     Task.Run(async () =>
@@ -69,10 +50,7 @@ conn.Notification += (_, _) =>
 while (true)
     await conn.WaitAsync();
 
-// =============================================================
-// Geração de HTML — domínio da aplicação C#
-// =============================================================
-
+// Geração de HTML
 static async Task<string> GerarHtmlAsync(NpgsqlConnection conn)
 {
     var sb = new System.Text.StringBuilder();
@@ -136,10 +114,7 @@ static async Task<string> GerarHtmlAsync(NpgsqlConnection conn)
     return sb.ToString();
 }
 
-// =============================================================
 // Envio de email via SMTP
-// =============================================================
-
 static void EnviarEmail(string html, string host, int port, string user, string pass, string[] dests)
 {
     var message = new MimeMessage();

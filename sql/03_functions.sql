@@ -1,16 +1,3 @@
--- =============================================================
--- 03_functions.sql — Functions de consulta do Projeto 1UP
---
--- Responsabilidade: retornar dados brutos para a aplicação.
--- A montagem do HTML é feita no C# (domínio da aplicação).
--- =============================================================
-
--- -------------------------------------------------------------
--- fn_dados_relatorio()
--- Retorna todas as previsões do dia corrente com dados da zona UTC.
--- O Worker C# consome essa função para montar o corpo do email.
--- -------------------------------------------------------------
-
 CREATE OR REPLACE FUNCTION fn_dados_relatorio()
 RETURNS TABLE (
     zona_nome      TEXT,
@@ -45,12 +32,6 @@ LANGUAGE sql STABLE AS $$
     WHERE p.data_hora::DATE = CURRENT_DATE
     ORDER BY z.utc_offset, p.periodo;
 $$;
-
--- -------------------------------------------------------------
--- fn_log_hoje()
--- Retorna os últimos 20 registros de log do dia corrente.
--- Consumida pelo Worker C# para exibir no rodapé do email.
--- -------------------------------------------------------------
 
 CREATE OR REPLACE FUNCTION fn_log_hoje()
 RETURNS TABLE (

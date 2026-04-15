@@ -1,13 +1,3 @@
--- =============================================================
--- 04_pgagent_job.sql — Job diário no pgAgent
---
--- Agendado para rodar todo dia às 06:00.
--- Emite NOTIFY para sinalizar o Worker C#, que então
--- consulta fn_dados_relatorio(), monta o HTML e envia o email.
---
--- Pré-requisito: pgAgent instalado e rodando como serviço.
--- =============================================================
-
 -- Criar o job
 INSERT INTO pgagent.pga_job (jobjclid, jobname, jobdesc, jobenabled)
 VALUES (
@@ -17,7 +7,7 @@ VALUES (
     TRUE
 );
 
--- Step: emite NOTIFY — sem HTML no payload
+--  emite NOTIFY
 INSERT INTO pgagent.pga_jobstep (jstjobid, jstname, jstenabled, jstkind, jstcode, jstonerror)
 VALUES (
     currval('pgagent.pga_job_jobid_seq'),
@@ -28,7 +18,7 @@ VALUES (
     'f'   -- falha em caso de erro
 );
 
--- Schedule: diariamente às 06:00 (hora 6, minuto 0)
+-- schedule: diariamente às 06:00
 INSERT INTO pgagent.pga_schedule (
     jscjobid, jscname, jscenabled, jscstart,
     jscminutes, jschours, jscweekdays, jscmonthdays, jscmonths
